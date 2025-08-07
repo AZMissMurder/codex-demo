@@ -22,8 +22,11 @@ class Battle:
         self.font = pygame.font.SysFont(None, 22)
         self.bigfont = pygame.font.SysFont(None, 28)
 
-        self.phase = "player"  # "player" or "enemy" or "message"
-        self.action_index = 0   # which party member acts
+        # Turn system: one actor acts at a time; a round is everyone acting once
+        self.phase = "turn"  # "turn" or "message"
+        self.turn_queue = []
+        self.turn_index = 0
+        self.action_index = 0   # kept for backward-compat with some UI logic (unused in new flow)
         self.ability_choice = None
         self.target_index = 0
         self.message = None
@@ -32,6 +35,8 @@ class Battle:
         self.enemies = self._spawn_enemies()
         self.victory = None  # True/False when over
         self.dialogue = DialogueBox((self.game.screen.get_width(), self.game.screen.get_height()))
+        # Build initial round order
+        self._build_turn_queue()
 
     def enter(self, **kwargs):
         pass
@@ -55,25 +60,38 @@ class Battle:
             enemies.append(Monster(name, level, hp, abilities=abilities, is_player=False))
         return enemies
 
+    def _build_turn_queue(self):
+        # Interleave party and enemies so actions alternate when possible
+        party_alive = [m for m in self.party.members if m.alive]
+        enemies_alive = [e for e in self.enemies if e.alive]
+        self.turn_queue = []
+        for i in range(max(len(party_alive), len(enemies_alive))):
+            if i < len(party_alive):
+                self.turn_queue.append(party_alive[i])
+            if i < len(enemies_alive):
+                self.turn_queue.append(enemies_alive[i])
+        self.turn_index = 0
+
     def _current_actor(self):
-        alive = self.party.alive_members()
-        if not alive:
+        # Skip dead actors and advance as needed
+        while self.turn_index < len(self.turn_queue) and not self.turn_queue[self.turn_index].alive:
+            self.turn_index += 1
+        if self.turn_index >= len(self.turn_queue):
             return None
-        if self.action_index >= len(alive):
-            self.action_index = 0
-        return alive[self.action_index]
+        return self.turn_queue[self.turn_index]
+
+    def _advance_turn(self):
+        self.turn_index += 1
+        # End of round → rebuild queue for next round
+        if self.turn_index >= len(self.turn_queue):
+            self._build_turn_queue()
+        # Reset per-turn selection
+        self.ability_choice = None
+        self.target_index = 0
 
     def _advance_or_enemy_phase(self):
-        alive = self.party.alive_members()
-        if self.action_index >= len(alive) - 1:
-            self.phase = "enemy"
-            self.action_index = 0
-            self.ability_choice = None
-            self.target_index = 0
-        else:
-            self.action_index += 1
-            self.ability_choice = None
-            self.target_index = 0
+        # Legacy helper kept for compatibility; forward to new turn system
+        self._advance_turn()
 
     def _give_xp_reward(self):
         minutes = self.game.elapsed_minutes()
@@ -103,22 +121,19 @@ class Battle:
             self.message = "Your party has fallen... Restarting."
             self.dialogue.open([self.message])
 
-    def _do_enemy_turn(self):
-        for e in [x for x in self.enemies if x.alive]:
-            targets = self.party.alive_members()
-            if not targets:
-                break
-            t = random.choice(targets)
-            ability = random.choice(e.abilities)
-            dmg = max(1, ability.power + e.level * 2 + random.randint(-3, 3))
-            t.take_damage(dmg)
-            # Show a quick dialogue message
-            self.phase = "message"
-            self.message = f"{e.name} used {ability.name} on {t.name} (-{dmg})."
-            self.dialogue.open([self.message])
-            return  # pause after each enemy action
-        self.phase = "player"
-        self.action_index = 0
+    def _do_enemy_turn(self, enemy_actor):
+        targets = [m for m in self.party.alive_members()]
+        if not targets:
+            self._check_over()
+            return
+        t = random.choice(targets)
+        ability = random.choice(enemy_actor.abilities)
+        dmg = max(1, ability.power + enemy_actor.level * 2 + random.randint(-3, 3))
+        t.take_damage(dmg)
+        # Show a quick dialogue message
+        self.phase = "message"
+        self.message = f"{enemy_actor.name} used {ability.name} on {t.name} (-{dmg})."
+        self.dialogue.open([self.message])
         self._check_over()
 
     def handle_event(self, event):
@@ -139,20 +154,21 @@ class Battle:
                         from main import boot_new_game
                         boot_new_game(self.game)
                 else:
-                    # continue battle flow
+                    # continue battle flow to next actor
                     if any(e.alive for e in self.enemies) and any(m.alive for m in self.party.members):
-                        if self._current_actor() is None or self.phase == "enemy":
-                            self._do_enemy_turn()
-                        else:
-                            self.phase = "player"
+                        self.phase = "turn"
+                        self._advance_turn()
             return
 
         if event.type == pygame.KEYDOWN:
-            if self.phase == "player":
+            if self.phase == "turn":
                 actor = self._current_actor()
                 if not actor:
-                    self.phase = "enemy"
+                    # End of round; queue rebuilt automatically
                     return
+
+                if not getattr(actor, 'is_player', False):
+                    return  # player input only applies to player-controlled turns
 
                 if self.ability_choice is None:
                     # Choose ability via number keys
@@ -192,16 +208,14 @@ class Battle:
                     # Clear choice and advance
                     self.ability_choice = None
                     self._check_over()
-                    if self.phase != "message":
-                        self._advance_or_enemy_phase()
-
-            elif self.phase == "enemy":
-                # SPACE to fast-forward the enemy turn
-                if event.key in (pygame.K_SPACE, pygame.K_RETURN):
-                    self._do_enemy_turn()
 
     def update(self, dt):
         self.dialogue.update(dt)
+        if self.phase != "message":
+            actor = self._current_actor()
+            if actor and not getattr(actor, 'is_player', False):
+                # Auto-execute AI turn
+                self._do_enemy_turn(actor)
 
     def draw(self, screen):
         screen.fill((10, 10, 20))
@@ -229,10 +243,9 @@ class Battle:
             img = self.font.render(label, True, (255,255,255))
             screen.blit(img, (px+10, py + i*80 + 8))
 
-        # Ability panel for current actor
-        if self.phase == "player":
-            actor = self._current_actor()
-            if actor:
+        # Ability panel for current player-controlled actor
+        actor = self._current_actor()
+        if self.phase != "message" and actor and getattr(actor, 'is_player', False):
                 panel_y = screen.get_height() - 180
                 pygame.draw.rect(screen, (30, 30, 45), (0, panel_y, screen.get_width(), 180))
                 title = self.bigfont.render(f"{actor.name}'s turn — choose ability (1-9)", True, (255,255,255))
