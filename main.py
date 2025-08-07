@@ -2,6 +2,7 @@ import pygame, sys
 from engine import Game
 from overworld import Overworld
 from battle import Battle
+from menu import MainMenu
 
 WIDTH, HEIGHT = 800, 600
 FPS = 60
@@ -13,6 +14,9 @@ def boot_new_game(game):
     # Rebuild a fresh overworld and return to it
     ow = Overworld(game)
     game.set_state("overworld", overworld=ow)
+
+def back_to_menu(game):
+    game.set_state("menu")
 
 class OverworldState:
     def __init__(self, game):
@@ -65,6 +69,7 @@ def main():
     clock = pygame.time.Clock()
 
     states = {
+        "menu": MainMenu(None),
         "overworld": OverworldState(None),
         "battle": BattleState(None),
     }
@@ -72,11 +77,12 @@ def main():
     # game reference into each state first, then switch to the desired start
     # state. This ensures the overworld is created with a valid game object.
     game = Game(screen, states)
+    states["menu"].game = game
     states["overworld"].game = game
     states["battle"].game = game
 
-    # Boot the game by switching to the overworld state
-    game.set_state("overworld")
+    # Start at main menu
+    game.set_state("menu")
 
     while game.running:
         dt = clock.tick(FPS) / 1000.0

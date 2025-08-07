@@ -125,8 +125,8 @@ class Battle:
         elif self.party.is_wiped():
             self.victory = False
             self.phase = "message"
-            self.message = "Your party has fallen... Restarting."
-            self.dialogue.open([self.message])
+            self.message = "Your party has fallen..."
+            self.dialogue.open([self.message],)
 
     def _do_enemy_turn(self, enemy_actor):
         targets = [m for m in self.party.alive_members()]
@@ -158,8 +158,8 @@ class Battle:
                         from main import switch_to_overworld
                         switch_to_overworld(self.game, self.overworld)
                     else:
-                        from main import boot_new_game
-                        boot_new_game(self.game)
+                        from main import back_to_menu
+                        back_to_menu(self.game)
                 else:
                     # continue battle flow to next actor
                     if any(e.alive for e in self.enemies) and any(m.alive for m in self.party.members):
