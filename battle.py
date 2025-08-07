@@ -1,4 +1,5 @@
 import pygame, random
+from utils.assets import load_sprite_for, scale_to_fit
 from entities import Monster, Ability, BASIC_ABILITIES, hp_by_elapsed_minutes
 from dialogue import DialogueBox
 
@@ -33,6 +34,12 @@ class Battle:
 
         self.biome = biome
         self.enemies = self._spawn_enemies()
+        # Preload sprites
+        for e in self.enemies:
+            e.sprite = load_sprite_for("enemies", e.name)
+        for m in self.party.members:
+            if not hasattr(m, 'sprite') or m.sprite is None:
+                m.sprite = load_sprite_for("characters", m.name)
         self.victory = None  # True/False when over
         self.dialogue = DialogueBox((self.game.screen.get_width(), self.game.screen.get_height()))
         # Build initial round order
@@ -225,7 +232,11 @@ class Battle:
         ey = 40
         for i, e in enumerate(self.enemies):
             color = (200, 120, 120) if e.alive else (90, 50, 50)
-            pygame.draw.rect(screen, color, (ex, ey + i*80, 220, 60))
+            rect = pygame.Rect(ex, ey + i*80, 220, 60)
+            pygame.draw.rect(screen, color, rect)
+            if getattr(e, 'sprite', None):
+                sprite = scale_to_fit(e.sprite, rect.width-20, rect.height-20)
+                screen.blit(sprite, (rect.x + (rect.width - sprite.get_width())//2, rect.y + (rect.height - sprite.get_height())//2))
             self._draw_bar(screen, ex+10, ey + i*80 + 35, 200, 12, e.hp, e.max_hp)
             label = f"{e.name} Lv{e.level} HP {e.hp}/{e.max_hp}"
             img = self.font.render(label, True, (255,255,255))
@@ -237,7 +248,11 @@ class Battle:
         alive_party = [m for m in self.party.members]
         for i, m in enumerate(alive_party):
             color = (120, 160, 220) if m.alive else (50, 60, 90)
-            pygame.draw.rect(screen, color, (px, py + i*80, 220, 60))
+            rect = pygame.Rect(px, py + i*80, 220, 60)
+            pygame.draw.rect(screen, color, rect)
+            if getattr(m, 'sprite', None):
+                sprite = scale_to_fit(m.sprite, rect.width-20, rect.height-20)
+                screen.blit(sprite, (rect.x + (rect.width - sprite.get_width())//2, rect.y + (rect.height - sprite.get_height())//2))
             self._draw_bar(screen, px+10, py + i*80 + 35, 200, 12, m.hp, m.max_hp)
             label = f"{m.name} Lv{m.level} HP {m.hp}/{m.max_hp}"
             img = self.font.render(label, True, (255,255,255))

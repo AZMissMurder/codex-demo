@@ -1,4 +1,6 @@
 import pygame, random
+import os
+from utils.assets import load_sprite_for, scale_to_fit
 from dialogue import DialogueBox
 from mapgen import generate_map, BIOME_COLORS, SAFE_BIOMES
 from entities import Character, Party, NPC_NAMES, hp_by_elapsed_minutes
@@ -28,6 +30,10 @@ class Overworld:
         self.shown_intro = False
         self.message = None
         self.message_timer = 0
+
+        # Load sprites
+        self.player_sprite = load_sprite_for("characters", "player")
+        self.npc_sprite = load_sprite_for("npcs", "default")
 
         self.steps_since_last_encounter = 0
         self.encounter_base = 0.05  # per step probability
@@ -205,7 +211,13 @@ class Overworld:
             tx = npc["x"] - cam_x
             ty = npc["y"] - cam_y
             if 0 <= tx < VIEW_W and 0 <= ty < VIEW_H:
-                pygame.draw.circle(screen, (255, 200, 80), (tx*TILE + TILE//2, ty*TILE + TILE//2), TILE//3)
+                if self.npc_sprite:
+                    sprite = scale_to_fit(self.npc_sprite, TILE, TILE)
+                    nx = tx*TILE + (TILE - sprite.get_width())//2
+                    ny = ty*TILE + (TILE - sprite.get_height())//2
+                    screen.blit(sprite, (nx, ny))
+                else:
+                    pygame.draw.circle(screen, (255, 200, 80), (tx*TILE + TILE//2, ty*TILE + TILE//2), TILE//3)
 
         # draw quest nodes
         for qn in self.quest_nodes:
@@ -232,7 +244,11 @@ class Overworld:
         # draw player
         px = (self.player_pos[0] - cam_x) * TILE
         py = (self.player_pos[1] - cam_y) * TILE
-        pygame.draw.rect(screen, (80, 200, 255), (px+4, py+4, TILE-8, TILE-8))
+        if self.player_sprite:
+            sprite = scale_to_fit(self.player_sprite, TILE, TILE)
+            screen.blit(sprite, (px + (TILE - sprite.get_width())//2, py + (TILE - sprite.get_height())//2))
+        else:
+            pygame.draw.rect(screen, (80, 200, 255), (px+4, py+4, TILE-8, TILE-8))
 
         # HUD
         y = 5
