@@ -68,13 +68,15 @@ def main():
         "overworld": OverworldState(None),
         "battle": BattleState(None),
     }
-    # Inject game reference after constructing states
-    game = Game(screen, states, start_state="overworld")
+    # Construct the game without immediately entering a state. We inject the
+    # game reference into each state first, then switch to the desired start
+    # state. This ensures the overworld is created with a valid game object.
+    game = Game(screen, states)
     states["overworld"].game = game
     states["battle"].game = game
 
-    # Boot with a new overworld
-    states["overworld"].enter()
+    # Boot the game by switching to the overworld state
+    game.set_state("overworld")
 
     while game.running:
         dt = clock.tick(FPS) / 1000.0
